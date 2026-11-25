@@ -243,7 +243,10 @@ def test_crewai_framework_export():
 
 
 def test_google_adk_framework_export():
-    import google.adk as adk
+    adk = pytest.importorskip(
+        "google.adk",
+        reason="google.adk is not distributed on PyPI; ADK integration is optional.",
+    )
     from app.agents import TrippyCrew, adk_workflow_service
     crew = TrippyCrew()
 
@@ -262,3 +265,18 @@ def test_google_adk_framework_export():
     assert info["status"] == "ready"
     assert len(info["registered_agents"]) == 5
 
+
+def test_google_adk_optional_degrades_gracefully():
+    """Without google.adk installed, ADK exports must stub out instead of crashing."""
+    import importlib.util
+
+    from app.agents import TrippyCrew, adk_workflow_service
+
+    info = adk_workflow_service.get_framework_info()
+    assert info["workflow_name"] == "TrippyMultiAgentPlanningWorkflow"
+
+    if importlib.util.find_spec("google.adk") is None:
+        assert info["status"] == "adk_not_installed"
+        assert info["registered_agents"] == []
+        assert adk_workflow_service.build_workflow() is None
+        assert TrippyCrew().destination_agent.as_adk_agent() is None

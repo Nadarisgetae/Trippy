@@ -131,4 +131,26 @@ describe('API Client', () => {
     expect(res.data).toEqual(mockReady);
     expect(res.status).toBe(200);
   });
+
+  it('calls sequential stage endpoints', async () => {
+    const mockDest = { selected_destination: 'Kyoto, Japan', candidates: [] };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => mockDest,
+      }),
+    );
+
+    const { planStageDestination } = await import('../api');
+    const res = await planStageDestination({
+      origin: 'New Delhi, India',
+      start_date: '2026-11-15',
+      end_date: '2026-11-20',
+    });
+    expect(res.data).toEqual(mockDest);
+    expect(res.status).toBe(200);
+  });
 });

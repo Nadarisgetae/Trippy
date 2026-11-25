@@ -89,6 +89,10 @@ class Accommodation(BaseModel):
     check_out: Optional[dt_date] = None
     cost_per_night: Optional[float] = None
     rating: Optional[float] = Field(default=None, ge=0, le=5)
+    category: Optional[str] = "midscale"  # budget, midscale, luxury, boutique
+    booking_url: Optional[str] = None
+    source_url: Optional[str] = None
+    amenities: list[str] = Field(default_factory=list)
 
 
 class Activity(BaseModel):
@@ -98,6 +102,8 @@ class Activity(BaseModel):
     duration_hours: Optional[float] = None
     cost_estimate: Optional[float] = None
     description: Optional[str] = None
+    source_url: Optional[str] = None
+    source_label: Optional[str] = None
 
 
 class DayPlan(BaseModel):

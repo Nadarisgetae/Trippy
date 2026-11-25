@@ -181,7 +181,23 @@ class RAGKnowledgeBase:
     def __init__(self, collection_name: str = "trippy_destinations"):
         self.collection_name = collection_name
         self.embedding_fn = LocalSemanticEmbeddingFunction()
-        self.client = chromadb.Client()
+
+        # Prefer a persistent on-disk client so embeddings survive restarts.
+        # Fall back to an in-memory client when the directory is not writable
+        # (e.g. read-only container or serverless filesystem).
+        persist_dir = Path(settings.rag_persist_dir)
+        self.client = None
+        try:
+            persist_dir.mkdir(parents=True, exist_ok=True)
+            self.client = chromadb.PersistentClient(path=str(persist_dir))
+            logger.info(f"ChromaDB persistent client initialized at '{persist_dir}'.")
+        except Exception as exc:
+            logger.warning(
+                f"Could not initialize persistent ChromaDB client at '{persist_dir}' "
+                f"({exc}). Falling back to in-memory client; embeddings will not persist."
+            )
+            self.client = chromadb.Client()
+
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             embedding_function=self.embedding_fn,

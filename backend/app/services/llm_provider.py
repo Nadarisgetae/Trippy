@@ -26,14 +26,17 @@ class LLMProviderService:
     def __init__(self):
         self.provider = settings.ai_provider.lower()
         self.api_key = settings.ai_api_key
-        self.enabled = settings.ai_enabled and bool(self.api_key.strip())
+        # Auto-enable if a valid non-empty API key is present
+        self.enabled = (settings.ai_enabled or bool(self.api_key.strip())) and bool(self.api_key.strip())
         self.timeout = settings.ai_timeout_seconds
 
         # Select model name
-        if settings.ai_model.strip():
+        if settings.ai_model.strip() and "meta-llama/llama-3.3-70b-instruct:free" not in settings.ai_model:
             self.model = settings.ai_model.strip()
         elif self.provider == "gemini":
             self.model = "gemini-1.5-flash"
+        elif self.provider == "openrouter" or self.api_key.startswith("sk-or-"):
+            self.model = "openrouter/free"
         else:
             self.model = "gpt-4o-mini"
 
@@ -59,13 +62,17 @@ class LLMProviderService:
         )
 
         try:
-            # Auto-detect groq key format if provider is not explicitly groq
+            # Auto-detect groq or openrouter key format if provider is not explicitly set
             effective_provider = self.provider
             if self.api_key.startswith("gsk_"):
                 effective_provider = "groq"
+            elif self.api_key.startswith("sk-or-"):
+                effective_provider = "openrouter"
 
             if effective_provider == "groq":
                 return await self._call_groq(prompt, augmented_system, schema_cls)
+            elif effective_provider == "openrouter":
+                return await self._call_openrouter(prompt, augmented_system, schema_cls)
             elif effective_provider == "gemini":
                 return await self._call_gemini(prompt, augmented_system, schema_cls)
             elif effective_provider == "openai":
@@ -193,6 +200,55 @@ class LLMProviderService:
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+            choices = data.get("choices", [])
+            if not choices:
+                return None
+            text = choices[0].get("message", {}).get("content", "")
+            parsed = json.loads(text)
+            return schema_cls.model_validate(parsed)
+
+
+    async def _call_openrouter(
+        self,
+        prompt: str,
+        system_instruction: str,
+        schema_cls: Type[T],
+    ) -> Optional[T]:
+        """Calls OpenRouter Chat Completions API with json_object enforcement."""
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",
+            "X-Title": "TRIPPY",
+        }
+
+        model_name = self.model if self.model and not self.model.startswith("gemini") else "openrouter/free"
+        if "meta-llama/llama-3.3-70b-instruct:free" in model_name:
+            model_name = "openrouter/free"
+
+        payload: Dict[str, Any] = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"{system_instruction}\nYou MUST respond strictly with valid JSON conforming to the schema of {schema_cls.__name__}.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 404 and model_name != "openrouter/free":
+                # Fallback to general openrouter/free
+                payload["model"] = "openrouter/free"
+                resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
 

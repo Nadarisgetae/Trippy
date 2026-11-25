@@ -10,6 +10,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.trip import (
+    Accommodation,
     Activity,
     BudgetBreakdown,
     DayPlan,
@@ -57,6 +58,7 @@ class StayActivityAgentOutput(BaseModel):
     )
     cost_per_night: float = Field(default=0.0, ge=0.0)
     total_accommodation_cost: float = Field(default=0.0, ge=0.0)
+    hotel_options: List[Accommodation] = Field(default_factory=list)
     activities: List[Activity] = Field(default_factory=list)
     total_activities_cost: float = Field(default=0.0, ge=0.0)
     daily_food_cost: float = Field(default=0.0, ge=0.0)
@@ -80,6 +82,12 @@ class BudgetAgentOutput(BaseModel):
     overflow_amount: float = Field(default=0.0, ge=0.0)
     reduction_proposals: List[BudgetReductionProposal] = Field(default_factory=list)
     notes: str = ""
+
+
+class ItineraryNarrative(BaseModel):
+    trip_title: str
+    summary: str
+    travel_tips: List[str] = Field(default_factory=list)
 
 
 # ─── 5. Itinerary Agent Outputs ──────────────────────────────────────────

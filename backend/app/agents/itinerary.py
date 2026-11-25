@@ -11,6 +11,7 @@ from app.agents.base import TrippyAgent
 from app.schemas.agent_outputs import (
     BudgetAgentOutput,
     ItineraryAgentOutput,
+    ItineraryNarrative,
     StayActivityAgentOutput,
     TransportAgentOutput,
 )
@@ -52,13 +53,22 @@ class ItineraryAgent(TrippyAgent):
         # Build day-by-day plans
         days: List[DayPlan] = []
 
+        matched_hotel = next(
+            (h for h in getattr(stay_activity, "hotel_options", []) if h.name in stay_activity.accommodation_name or stay_activity.accommodation_name in h.name),
+            None,
+        )
+
         hotel = Accommodation(
             name=stay_activity.accommodation_name,
             location=destination,
             check_in=preferences.start_date,
             check_out=preferences.end_date,
             cost_per_night=stay_activity.cost_per_night,
-            rating=4.5 if stay_activity.accommodation_category in ["luxury", "boutique"] else 4.0,
+            rating=matched_hotel.rating if matched_hotel else (4.5 if stay_activity.accommodation_category in ["luxury", "boutique"] else 4.0),
+            category=stay_activity.accommodation_category,
+            booking_url=matched_hotel.booking_url if matched_hotel else None,
+            source_url=matched_hotel.source_url if matched_hotel else None,
+            amenities=matched_hotel.amenities if matched_hotel else [],
         )
 
         daily_budget = round(budget.breakdown.total / duration_days, 2)
@@ -132,17 +142,17 @@ class ItineraryAgent(TrippyAgent):
         if llm_service.is_available():
             try:
                 prompt = (
-                    f"Enhance the title and summary for a {duration_days}-day trip to {destination}.\n"
+                    f"Create an inspiring title, a concise 2-sentence summary, and 3 insider tips for a {duration_days}-day trip to {destination}.\n"
                     f"Style: {preferences.travel_style.value}. Travelers: {preferences.travelers}.\n"
-                    f"Summary draft: {summary}"
+                    f"Interests: {', '.join(preferences.interests) if preferences.interests else 'local culture and sights'}."
                 )
-                system = f"You are the {self.role}. {self.backstory}"
-                ai_res = await llm_service.generate_structured(prompt, system, ItineraryAgentOutput)
-                if ai_res and ai_res.days:
-                    # Ensure verified DayPlan structure remains valid
-                    if not ai_res.warnings and warnings:
-                        ai_res.warnings = warnings
-                    return ai_res
+                system = f"You are the {self.role}. {self.backstory}. Respond with authentic, evocative travel advice."
+                ai_res = await llm_service.generate_structured(prompt, system, ItineraryNarrative)
+                if ai_res and ai_res.trip_title:
+                    deterministic_output.trip_title = ai_res.trip_title
+                    deterministic_output.summary = ai_res.summary
+                    if ai_res.travel_tips:
+                        deterministic_output.travel_tips = ai_res.travel_tips
             except Exception:
                 pass
 

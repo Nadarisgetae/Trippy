@@ -8,7 +8,7 @@ with in-memory TTL caching and deterministic fallback rates.
 from datetime import datetime
 import logging
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import httpx
 
 from app.config import settings

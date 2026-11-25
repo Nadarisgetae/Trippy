@@ -129,7 +129,7 @@ async def test_distinguish_verified_live_from_estimated():
     """Verify system explicitly labels live verified vs estimated data."""
     # Live route
     osrm = OSRMRouteProvider()
-    live_route = await osrm.get_route("Rome, Italy", "Paris, France")
+    live_route = await osrm.get_route("Rome, Italy", "Paris, France", mode="flight")
     assert live_route.is_live is True
     assert "Live" in live_route.provider_name or "Geodesic" in live_route.provider_name
 

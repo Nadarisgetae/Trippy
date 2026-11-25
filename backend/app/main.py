@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health_router, trips_router
+from app.routers import health_router, stages_router, trips_router
 
 
 @asynccontextmanager
@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
 
     # API routers
     app.include_router(trips_router, prefix="/api")
+    app.include_router(stages_router, prefix="/api")
 
     return app
 

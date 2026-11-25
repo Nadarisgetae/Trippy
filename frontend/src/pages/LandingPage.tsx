@@ -42,9 +42,21 @@ const STEPS = [
   { num: '03', title: 'Get Your Itinerary', desc: 'Receive a detailed, day-by-day travel plan ready to go.' },
 ];
 
-export default function LandingPage() {
+interface LandingPageProps {
+  onOpenPlanner?: () => void;
+}
+
+export default function LandingPage({ onOpenPlanner }: LandingPageProps = {}) {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
-  const [isPlannerOpen, setIsPlannerOpen] = useState(false);
+  const [internalPlannerOpen, setInternalPlannerOpen] = useState(false);
+
+  const handleOpenPlanner = () => {
+    if (onOpenPlanner) {
+      onOpenPlanner();
+    } else {
+      setInternalPlannerOpen(true);
+    }
+  };
 
   useEffect(() => {
     checkHealth().then((res) => setBackendOnline(res.error === null));
@@ -52,8 +64,10 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-surface-950 text-white">
-      {/* Planner Modal */}
-      <PlannerModal isOpen={isPlannerOpen} onClose={() => setIsPlannerOpen(false)} />
+      {/* Planner Modal (fallback when not managed by parent App) */}
+      {!onOpenPlanner && (
+        <PlannerModal isOpen={internalPlannerOpen} onClose={() => setInternalPlannerOpen(false)} />
+      )}
 
       {/* ===== HERO ===== */}
       <section className="gradient-hero relative overflow-hidden pt-32 pb-24 sm:pt-40 sm:pb-32" id="hero">
@@ -93,7 +107,7 @@ export default function LandingPage() {
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => setIsPlannerOpen(true)}
+              onClick={handleOpenPlanner}
               className="rounded-2xl bg-primary-600 px-8 py-3.5 text-base font-semibold text-white
                          shadow-lg shadow-primary-600/25 hover:bg-primary-500 hover:shadow-primary-500/30
                          transition-all duration-200 active:scale-95 cursor-pointer"
@@ -171,7 +185,7 @@ export default function LandingPage() {
             Let AI handle the research. You handle the adventure.
           </p>
           <button
-            onClick={() => setIsPlannerOpen(true)}
+            onClick={handleOpenPlanner}
             className="mt-8 rounded-2xl bg-primary-600 px-10 py-4 text-base font-semibold text-white
                        shadow-lg shadow-primary-600/25 hover:bg-primary-500 hover:shadow-primary-500/30
                        transition-all duration-200 active:scale-95 cursor-pointer"

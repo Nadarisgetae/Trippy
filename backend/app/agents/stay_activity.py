@@ -5,6 +5,8 @@ Agent 3: Stay & Activity Specialist.
 Recommends accommodation categories, activities and food.
 """
 
+from typing import Optional
+
 from app.agents.base import TrippyAgent
 from app.schemas.agent_outputs import StayActivityAgentOutput
 from app.schemas.trip import TripPreferences
@@ -46,7 +48,7 @@ class StayActivityAgent(TrippyAgent):
             from app.integrations.places import places_service
             place_info = await places_service.get_destination_info(destination)
             if place_info and place_info.landmarks:
-                landmarks_list = [lm.name for lm in place_info.landmarks]
+                landmarks_list = place_info.landmarks
         except Exception:
             pass
 
@@ -79,31 +81,46 @@ class StayActivityAgent(TrippyAgent):
                     # Enrich first activity description with guidebook reference
                     deterministic_output.activities[0].description += f" (Curated via {passage.source})"
 
-        if llm_service.is_available() and refinement_level == 0:
+        # 2. If AI is available, generate structured stay & activity recommendations
+        if llm_service.is_available():
             try:
-                curr_sym = "₹" if preferences.currency.upper() == "INR" else ("€" if preferences.currency.upper() == "EUR" else ("£" if preferences.currency.upper() == "GBP" else "$"))
-                poi_snippet = f"Verified local landmarks (Wikipedia Geosearch): {', '.join(landmarks_list[:6])}.\n" if landmarks_list else ""
-                rate_snippet = f"Live Forex: 1 USD = {live_rate:.2f} {preferences.currency.upper()}.\n" if live_rate else ""
+                places_ctx = ""
+                if landmarks_list:
+                    lm_summary = "\n".join(
+                        f"- {getattr(l, 'name', str(l))}: {getattr(l, 'description', '')}"
+                        for l in landmarks_list[:6]
+                    )
+                    places_ctx = f"Verified local sights and landmarks in {destination}:\n{lm_summary}\n"
 
                 prompt = (
-                    f"Curate authentic accommodation, daily activities, and dining in {destination} for a {duration_days}-day trip.\n"
-                    f"Style: {preferences.travel_style.value}. Travelers: {preferences.travelers}. Currency: {preferences.currency.upper()} ({curr_sym}).\n"
-                    f"Interests: {preferences.interests}.\n"
-                    f"{poi_snippet}"
-                    f"{rate_snippet}"
-                    f"CRITICAL: 'activities' MUST contain exactly {duration_days} items (one primary activity per day of the trip).\n"
-                    f"CRITICAL: All prices (cost_per_night, total_accommodation_cost, cost_estimate, daily_food_cost, total_food_cost) MUST be in {preferences.currency.upper()} ({curr_sym}) with realistic local rates for {destination}.\n"
-                    f"Baseline reference: {deterministic_output.accommodation_name} ({curr_sym}{deterministic_output.cost_per_night:.2f}/night)."
+                    f"Destination: '{destination}'. Duration: {duration_days} days. Travelers: {preferences.travelers}.\n"
+                    f"Travel style: {preferences.travel_style.value}. Interests: {', '.join(preferences.interests) if preferences.interests else 'general'}.\n"
+                    f"Currency: {preferences.currency}.\n"
+                    f"{places_ctx}"
+                    f"CRITICAL REQUIREMENTS:\n"
+                    f"1. For activities, you MUST provide ACTUAL, SPECIFIC REAL NAMES of famous monuments, heritage sights, temples, lakes, museums, or culinary quarters in '{destination}' "
+                    f"(e.g., for Bhopal: 'Taj-ul-Masajid', 'Upper Lake (Bhojtal) & Van Vihar', 'Sanchi Stupa', 'Bhimbetka Rock Shelters', 'Madhya Pradesh Tribal Museum', NOT generic names like 'Bhopal Heritage Walk').\n"
+                    f"2. Under each activity, write an authentic 2-3 sentence description detailing what it is, its historical era or founder, architectural significance, and experience.\n"
+                    f"3. Provide realistic cost_estimate (0 for free monuments/lakes/gardens, small admission fees otherwise).\n"
+                    f"4. Provide verified source_url (e.g., https://en.wikipedia.org/wiki/...) and source_label.\n"
+                    f"5. Provide real hotel options in '{destination}' across luxury, boutique, midscale, and budget categories with realistic night rates in {preferences.currency} and booking links.\n"
+                    f"Provide at least {min(duration_days, 6)} distinct real activities."
                 )
-                system = f"You are the {self.role}. {self.backstory}"
+                system = (
+                    f"You are the {self.role}. {self.backstory}. "
+                    f"Always provide real, specific names of tourist attractions, detailed explanations of what they are, and authentic hotels."
+                )
                 ai_res = await llm_service.generate_structured(prompt, system, StayActivityAgentOutput)
-                if ai_res and ai_res.activities:
-                    if len(ai_res.activities) > duration_days:
-                        ai_res.activities = ai_res.activities[:duration_days]
-                    elif len(ai_res.activities) < duration_days:
-                        needed = duration_days - len(ai_res.activities)
-                        ai_res.activities.extend(deterministic_output.activities[:needed])
-                    return ai_res
+                if ai_res and ai_res.activities and len(ai_res.activities) >= 2:
+                    if not any("historic city center & heritage walk" in a.name.lower() for a in ai_res.activities):
+                        if not ai_res.hotel_options and deterministic_output.hotel_options:
+                            ai_res.hotel_options = deterministic_output.hotel_options
+                        if not ai_res.accommodation_name and deterministic_output.accommodation_name:
+                            ai_res.accommodation_name = deterministic_output.accommodation_name
+                            ai_res.accommodation_category = deterministic_output.accommodation_category
+                            ai_res.cost_per_night = deterministic_output.cost_per_night
+                            ai_res.total_stay_cost = deterministic_output.total_stay_cost
+                        return ai_res
             except Exception:
                 pass
 

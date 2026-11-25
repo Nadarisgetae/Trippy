@@ -126,31 +126,26 @@ class TrippyCrew:
             for p in matching_passages[:5]
         ]
 
-        # 5. External Integrations: Weather & Route Estimates
-        weather_res = None
-        try:
-            weather_res = await weather_service.get_forecast(
-                destination=selected_dest,
-                start_date=preferences.start_date,
-                end_date=preferences.end_date,
-            )
-        except Exception:
-            weather_res = None
+        # 5. External Integrations: Weather & Route Estimates in Parallel
+        import asyncio
+        weather_task = weather_service.get_forecast(
+            destination=selected_dest,
+            start_date=preferences.start_date,
+            end_date=preferences.end_date,
+        )
+        route_task = route_service.get_route(
+            origin=preferences.origin,
+            destination=selected_dest,
+            mode=preferences.preferred_transport.value,
+        )
+        weather_raw, route_raw = await asyncio.gather(weather_task, route_task, return_exceptions=True)
+        weather_res = weather_raw if not isinstance(weather_raw, Exception) else None
+        route_res = route_raw if not isinstance(route_raw, Exception) else None
 
-        route_res = None
-        try:
-            route_res = await route_service.get_route(
-                origin=preferences.origin,
-                destination=selected_dest,
-                mode=preferences.preferred_transport.value,
-            )
-        except Exception:
-            route_res = None
-
-        # 6. Step 2: Initial Estimates (Refinement Level 0)
+        # 6. Step 2: Initial Estimates (Refinement Level 0) with passed route_info
         refinement_level = 0
         transport_output = await self.transport_agent.run(
-            preferences, selected_dest, refinement_level=refinement_level
+            preferences, selected_dest, refinement_level=refinement_level, route_info=route_res
         )
         stay_output = await self.stay_activity_agent.run(
             preferences,

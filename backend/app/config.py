@@ -6,9 +6,12 @@ The application runs without any external services by default.
 """
 
 import json
+from pathlib import Path
 from typing import Any, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -46,10 +49,10 @@ class Settings(BaseSettings):
 
     # AI Provider configuration (server-side only)
     ai_enabled: bool = False
-    ai_provider: str = "groq"  # "groq" | "gemini" | "openai"
+    ai_provider: str = "openrouter"  # "openrouter" | "groq" | "gemini" | "openai"
     ai_api_key: str = ""
-    ai_model: str = "openai/gpt-oss-120b"
-    ai_timeout_seconds: float = 15.0
+    ai_model: str = "openrouter/free"
+    ai_timeout_seconds: float = 8.0
 
     # RAG Configuration
     rag_enabled: bool = True
@@ -60,10 +63,19 @@ class Settings(BaseSettings):
     weather_api_key: str = ""
     maps_provider: str = "osrm"  # "osrm" | "mock"
     maps_api_key: str = ""
-    integration_timeout_seconds: float = 5.0
+    integration_timeout_seconds: float = 3.0
     integration_cache_ttl_seconds: int = 600
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # Search & Live Pricing API (Google Custom Search / SerpAPI)
+    google_search_api_key: str = ""
+    google_search_cx: str = ""
+    serpapi_api_key: str = ""
+
+    model_config = {
+        "env_file": (str(_BACKEND_DIR / ".env"), ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     def masked_secrets(self) -> dict[str, str]:
         """Returns safe summary of configured credentials without leaking secrets."""

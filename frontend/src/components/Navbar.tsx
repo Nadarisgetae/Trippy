@@ -1,7 +1,24 @@
 import { useState } from 'react';
 
-export default function Navbar() {
+interface NavbarProps {
+  onOpenPlanner: () => void;
+  onOpenSavedTrips?: () => void;
+}
+
+export default function Navbar({ onOpenPlanner, onOpenSavedTrips }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleOpenPlanner = () => {
+    setMenuOpen(false);
+    onOpenPlanner();
+  };
+
+  const handleOpenSavedTrips = () => {
+    setMenuOpen(false);
+    if (onOpenSavedTrips) {
+      onOpenSavedTrips();
+    }
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">
@@ -31,11 +48,17 @@ export default function Navbar() {
             >
               How It Works
             </a>
+            {onOpenSavedTrips && (
+              <button
+                onClick={onOpenSavedTrips}
+                className="text-sm text-surface-100/70 hover:text-white transition-colors duration-200 cursor-pointer"
+                id="nav-saved-trips"
+              >
+                My Trips
+              </button>
+            )}
             <button
-              onClick={() => {
-                const btn = document.getElementById('hero-cta');
-                if (btn) btn.click();
-              }}
+              onClick={onOpenPlanner}
               className="rounded-xl bg-primary-600 px-5 py-2 text-sm font-semibold text-white
                          hover:bg-primary-500 transition-all duration-200 hover:shadow-glow
                          active:scale-95 cursor-pointer"
@@ -81,7 +104,16 @@ export default function Navbar() {
               >
                 How It Works
               </a>
+              {onOpenSavedTrips && (
+                <button
+                  onClick={handleOpenSavedTrips}
+                  className="text-left text-surface-100/70 hover:text-white transition-colors px-2 py-1 cursor-pointer"
+                >
+                  My Trips
+                </button>
+              )}
               <button
+                onClick={handleOpenPlanner}
                 className="rounded-xl bg-primary-600 px-5 py-2 text-sm font-semibold text-white
                            hover:bg-primary-500 transition-all duration-200 mt-1 cursor-pointer"
               >

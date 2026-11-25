@@ -51,7 +51,7 @@ class BudgetAgent(TrippyAgent):
                     f"Trip costs {curr_sym}{breakdown.total:.2f} {currency}, exceeding budget limit of {curr_sym}{budget_max:.2f}.\n"
                     f"Breakdown ({currency}): Transport: {curr_sym}{breakdown.transport:.2f}, Lodging: {curr_sym}{breakdown.accommodation:.2f}, "
                     f"Activities: {curr_sym}{breakdown.activities:.2f}, Food: {curr_sym}{breakdown.food_estimate:.2f}.\n"
-                    f"Provide refined reduction analysis while preserving deterministic calculations."
+                    f"Provide actionable reduction proposals across accommodation, transport, and food/activities."
                 )
                 system = f"You are the {self.role}. {self.backstory}"
                 ai_res = await llm_service.generate_structured(prompt, system, BudgetAgentOutput)
@@ -60,6 +60,11 @@ class BudgetAgent(TrippyAgent):
                     ai_res.breakdown = breakdown
                     ai_res.is_within_budget = deterministic_output.is_within_budget
                     ai_res.overflow_amount = deterministic_output.overflow_amount
+                    # Ensure key categories from deterministic analysis remain available
+                    existing_cats = {p.category for p in ai_res.reduction_proposals}
+                    for det_prop in deterministic_output.reduction_proposals:
+                        if det_prop.category not in existing_cats:
+                            ai_res.reduction_proposals.append(det_prop)
                     return ai_res
             except Exception:
                 pass

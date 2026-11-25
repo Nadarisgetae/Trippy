@@ -31,31 +31,47 @@ class TransportAgent(TrippyAgent):
         preferences: TripPreferences,
         destination: str,
         refinement_level: int = 0,
+        route_info: Optional[Any] = None,
     ) -> TransportAgentOutput:
         """
         Calculates transport estimates between origin and destination.
         refinement_level: 0 (default), 1 (economy saver), 2 (deep budget).
         """
-        # 1. Fetch live route estimates and live forex exchange rate
-        route_info = None
-        live_rate = None
-        try:
-            from app.integrations.maps import route_service
-            route_info = await route_service.get_route(
-                origin=preferences.origin,
-                destination=destination,
-                mode=preferences.preferred_transport.value,
-            )
-        except Exception:
-            pass
+        if route_info is None:
+            try:
+                from app.integrations.maps import route_service
+                route_info = await route_service.get_route(
+                    origin=preferences.origin,
+                    destination=destination,
+                    mode=preferences.preferred_transport.value,
+                )
+            except Exception:
+                pass
 
+        live_rate = None
         try:
             from app.integrations.forex import forex_service
             live_rate = await forex_service.get_multiplier_from_usd(preferences.currency)
         except Exception:
             pass
 
-        deterministic_output = estimate_transport(
+        # Look up live Google Search / outstation tariff quote
+        search_quote = None
+        try:
+            from app.integrations.search import search_pricing_service
+            search_quote = await search_pricing_service.lookup_transit_fare(
+                origin=preferences.origin,
+                destination=destination,
+                mode=preferences.preferred_transport,
+                travelers=preferences.travelers,
+                distance_km=route_info.distance_km if route_info else None,
+                currency=preferences.currency,
+                forex_rate=live_rate or 1.0,
+            )
+        except Exception:
+            search_quote = None
+
+        deterministic_res = estimate_transport(
             origin=preferences.origin,
             destination=destination,
             preferred_mode=preferences.preferred_transport,
@@ -66,48 +82,48 @@ class TransportAgent(TrippyAgent):
             live_forex_rate=live_rate,
             distance_km=route_info.distance_km if route_info else None,
             route_duration_hours=route_info.duration_hours if route_info else None,
+            live_fare_quote=search_quote,
         )
 
-        if llm_service.is_available() and refinement_level == 0:
+        if llm_service.is_available():
             try:
-                curr_sym = "₹" if preferences.currency.upper() == "INR" else ("€" if preferences.currency.upper() == "EUR" else ("£" if preferences.currency.upper() == "GBP" else "$"))
-                route_snippet = f"Verified route distance: {route_info.distance_km:.1f} km, estimated travel time: ~{route_info.duration_hours:.1f}h ({route_info.provider_name}).\n" if route_info else ""
-                rate_snippet = f"Live Forex: 1 USD = {live_rate:.2f} {preferences.currency.upper()}.\n" if live_rate else ""
-
+                dist_info = f"Route distance: ~{route_info.distance_km:.0f} km, estimated duration: {route_info.duration_hours:.1f}h." if route_info else ""
+                veh_info = deterministic_res.legs[0].notes if deterministic_res.legs else ""
                 prompt = (
-                    f"Estimate realistic round-trip transit from {preferences.origin} to {destination} for {preferences.travelers} traveler(s).\n"
-                    f"Mode: {preferences.preferred_transport.value}. Style: {preferences.travel_style.value}.\n"
-                    f"Currency: {preferences.currency.upper()} ({curr_sym}).\n"
-                    f"{route_snippet}"
-                    f"{rate_snippet}"
-                    f"CRITICAL: 'legs' MUST contain exactly 2 TransportLeg items: one outbound leg ({preferences.origin} -> {destination}) "
-                    f"and one return leg ({destination} -> {preferences.origin}).\n"
-                    f"CRITICAL: All cost_estimate and total_cost numbers MUST be in {preferences.currency.upper()} ({curr_sym}) representing realistic fares.\n"
-                    f"Baseline estimate: {curr_sym}{deterministic_output.total_cost:.2f} {preferences.currency}."
+                    f"Traveler departing from '{preferences.origin}' to '{destination}' for {preferences.travelers} traveler(s).\n"
+                    f"{dist_info} Preferred mode: {preferences.preferred_transport.value}. Style: {preferences.travel_style.value}. Currency: {preferences.currency}.\n"
+                    f"Verified pricing model: {veh_info}.\n"
+                    f"Provide authentic real-world transit legs. You must return exactly 2 primary legs: "
+                    f"Leg 1 is outbound from '{preferences.origin}' to '{destination}', and Leg 2 is return from '{destination}' to '{preferences.origin}'. "
+                    f"(If connecting flights or multi-step transfers are involved, specify details in the notes field while keeping exactly 2 legs: outbound and return).\n"
+                    f"Realistic baseline round-trip cost for all {preferences.travelers} travelers is ~{deterministic_res.total_cost} {preferences.currency}."
                 )
                 system = f"You are the {self.role}. {self.backstory}"
                 ai_res = await llm_service.generate_structured(prompt, system, TransportAgentOutput)
-                if ai_res and ai_res.legs:
-                    if len(ai_res.legs) == 1:
-                        # Auto-mirror return leg if LLM only provided outbound leg
-                        outbound = ai_res.legs[0]
-                        from app.schemas.trip import TransportLeg
-                        return_leg = TransportLeg(
-                            mode=outbound.mode,
-                            origin=outbound.destination,
-                            destination=outbound.origin,
-                            departure_time="Return date afternoon",
-                            arrival_time="Return date evening",
-                            cost_estimate=outbound.cost_estimate,
-                            notes=f"Return leg ({outbound.destination} to {outbound.origin})",
-                        )
-                        ai_res.legs.append(return_leg)
-                        ai_res.total_cost = round(outbound.cost_estimate * 2, 2)
+                if ai_res and ai_res.legs and ai_res.total_cost > 0:
                     if not ai_res.alternatives:
-                        ai_res.alternatives = deterministic_output.alternatives
+                        ai_res.alternatives = deterministic_res.alternatives
+                    # Preserve verified vehicle notes if AI returned generic notes
+                    if deterministic_res.legs and "[Source:" in deterministic_res.legs[0].notes:
+                        for l in ai_res.legs:
+                            if "[Source:" not in (l.notes or ""):
+                                l.notes = deterministic_res.legs[0].notes
                     if len(ai_res.legs) == 2:
+                        return ai_res
+                    elif len(ai_res.legs) > 2:
+                        # Consolidate connecting sub-legs into exactly 2 primary legs (outbound & return)
+                        first_leg = ai_res.legs[0]
+                        last_leg = ai_res.legs[-1]
+                        first_leg.origin = preferences.origin
+                        first_leg.destination = destination
+                        last_leg.origin = destination
+                        last_leg.destination = preferences.origin
+                        half_cost = round(ai_res.total_cost / 2.0, 2)
+                        first_leg.cost_estimate = half_cost
+                        last_leg.cost_estimate = half_cost
+                        ai_res.legs = [first_leg, last_leg]
                         return ai_res
             except Exception:
                 pass
 
-        return deterministic_output
+        return deterministic_res

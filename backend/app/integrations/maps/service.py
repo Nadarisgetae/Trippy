@@ -30,6 +30,28 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     "jakarta": (-6.2088, 106.8456),
     "new delhi": (28.6139, 77.2090),
     "delhi": (28.6139, 77.2090),
+    "ncr": (28.6139, 77.2090),
+    "meerut": (28.9800, 77.7064),
+    "merrut": (28.9800, 77.7064),
+    "ghaziabad": (28.6692, 77.4538),
+    "gzb": (28.6692, 77.4538),
+    "noida": (28.5355, 77.3910),
+    "greater noida": (28.4744, 77.5040),
+    "gurgaon": (28.4595, 77.0266),
+    "gurugram": (28.4595, 77.0266),
+    "faridabad": (28.4089, 77.3178),
+    "agra": (27.1767, 78.0081),
+    "mathura": (27.4924, 77.6737),
+    "vrindavan": (27.5806, 77.6983),
+    "haridwar": (29.9457, 78.1642),
+    "dehradun": (30.3165, 78.0322),
+    "mussoorie": (30.4598, 78.0644),
+    "nainital": (29.3919, 79.4542),
+    "varanasi": (25.3176, 82.9739),
+    "lucknow": (26.8467, 80.9462),
+    "kanpur": (26.4499, 80.3319),
+    "prayagraj": (25.4358, 81.8463),
+    "aligarh": (27.8974, 78.0880),
     "kasol": (32.0100, 77.3150),
     "manali": (32.2432, 77.1892),
     "shimla": (31.1048, 77.1734),
@@ -39,6 +61,15 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     "mumbai": (19.0760, 72.8777),
     "bangalore": (12.9716, 77.5946),
     "bengaluru": (12.9716, 77.5946),
+    "bhopal": (23.2599, 77.4126),
+    "indore": (22.7196, 75.8577),
+    "amritsar": (31.6340, 74.8723),
+    "hyderabad": (17.3850, 78.4867),
+    "kolkata": (22.5726, 88.3639),
+    "udaipur": (24.5854, 73.7125),
+    "chennai": (13.0827, 80.2707),
+    "kochi": (9.9312, 76.2673),
+    "pune": (18.5204, 73.8567),
     "barcelona": (41.3851, 2.1734),
     "madrid": (40.4168, -3.7038),
     "berlin": (52.5200, 13.4050),
@@ -198,13 +229,70 @@ class MatrixFallbackRouteProvider(RouteProvider):
     async def get_route(
         self, origin: str, destination: str, mode: str = "mixed"
     ) -> RouteEstimate:
-        # Default baseline
+        # Check LLM routing intelligence if available
+        try:
+            from app.services.llm_provider import llm_service
+            from pydantic import BaseModel
+
+            if llm_service.is_available():
+                class AIQuickRoute(BaseModel):
+                    distance_km: float
+                    duration_hours: float
+                    mode: str
+                    is_domestic_or_regional: bool
+                    route_summary: str
+
+                prompt = (
+                    f"Estimate travel distance in km and duration in hours between '{origin}' and '{destination}'.\n"
+                    f"Preferred travel mode: '{mode}'.\n"
+                    f"Notice if both locations are near each other (e.g. New Delhi to Meerut is ~70 km, ~1.2h transit; Delhi to Agra is ~230 km, ~3.5h transit).\n"
+                    f"Provide distance_km, duration_hours, mode, is_domestic_or_regional, and route_summary."
+                )
+                system = "You are a geographic transit routing and distance estimation engine."
+                ai_res = await llm_service.generate_structured(prompt, system, AIQuickRoute)
+                if ai_res and ai_res.distance_km > 0:
+                    return RouteEstimate(
+                        origin=origin,
+                        destination=destination,
+                        distance_km=round(ai_res.distance_km, 1),
+                        duration_hours=round(ai_res.duration_hours, 1),
+                        mode=ai_res.mode,
+                        is_live=True,
+                        provider_name="AI Geodesic Route Engine",
+                        route_summary=ai_res.route_summary,
+                    )
+        except Exception as e:
+            logger.debug(f"AI route fallback error: {e}")
+
+        # Deterministic geographic heuristic
+        orig_clean = origin.lower()
+        dest_clean = destination.lower()
+        is_same_country = any(
+            c in orig_clean and c in dest_clean
+            for c in ["india", "italy", "japan", "france", "spain", "usa", "uk", "germany", "switzerland", "indonesia", "thailand"]
+        )
+
+        if is_same_country:
+            est_km = 120.0
+            est_hrs = 2.0
+            return RouteEstimate(
+                origin=origin,
+                destination=destination,
+                distance_km=est_km,
+                duration_hours=est_hrs,
+                mode="road / train" if mode == "mixed" else mode,
+                is_live=False,
+                provider_name="Estimated Regional Transit Matrix",
+                route_summary=f"Estimated domestic corridor: ~{est_km:.0f} km (~{est_hrs}h transit) between {origin} and {destination}.",
+            )
+
+        # Default intercontinental baseline
         return RouteEstimate(
             origin=origin,
             destination=destination,
             distance_km=6500.0,
             duration_hours=9.5,
-            mode=mode,
+            mode="flight" if mode == "mixed" else mode,
             is_live=False,
             provider_name="Estimated Distance Matrix",
             route_summary=f"Estimated transit baseline: ~6,500 km between {origin} and {destination}.",

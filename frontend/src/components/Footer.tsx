@@ -1,6 +1,6 @@
-export default function Footer() {
-  const year = new Date().getFullYear();
+const CURRENT_YEAR = new Date().getFullYear();
 
+export default function Footer() {
   return (
     <footer className="border-t border-white/5 bg-surface-950/80">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -27,7 +27,7 @@ export default function Footer() {
 
           {/* Copyright */}
           <p className="text-xs text-surface-100/30">
-            © {year} TRIPPY. Crafted with AI.
+            © {CURRENT_YEAR} TRIPPY. Crafted with AI.
           </p>
         </div>
       </div>

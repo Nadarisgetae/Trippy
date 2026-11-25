@@ -74,7 +74,7 @@ def evaluate_budget(
                     category="accommodation",
                     action="Shift to standard/guesthouse tier accommodation",
                     estimated_savings=est_acc_savings,
-                    description=f"Switching accommodation tier saves ~${est_acc_savings:.2f} {currency}.",
+                    description=f"Switching accommodation tier saves ~{est_acc_savings:.2f} {currency}.",
                 )
             )
 
@@ -86,7 +86,7 @@ def evaluate_budget(
                     category="transport",
                     action="Switch to economy saver / off-peak transit timing",
                     estimated_savings=est_trans_savings,
-                    description=f"Booking off-peak or saver transit saves ~${est_trans_savings:.2f} {currency}.",
+                    description=f"Booking off-peak or saver transit saves ~{est_trans_savings:.2f} {currency}.",
                 )
             )
 
@@ -98,7 +98,7 @@ def evaluate_budget(
                     category="activities",
                     action="Substitute paid excursions with free cultural landmarks",
                     estimated_savings=est_act_savings,
-                    description=f"Self-guided walks and municipal museums save ~${est_act_savings:.2f} {currency}.",
+                    description=f"Self-guided walks and municipal museums save ~{est_act_savings:.2f} {currency}.",
                 )
             )
 
@@ -110,18 +110,18 @@ def evaluate_budget(
                     category="food",
                     action="Focus on local bistros, street markets, and included breakfasts",
                     estimated_savings=est_food_savings,
-                    description=f"Casual dining saves ~${est_food_savings:.2f} {currency}.",
+                    description=f"Casual dining saves ~{est_food_savings:.2f} {currency}.",
                 )
             )
 
         notes = (
-            f"Trip total of ${breakdown.total:.2f} exceeds limit of ${budget_max:.2f} "
-            f"by ${overflow:.2f} {currency}. {len(proposals)} reduction strategies proposed."
+            f"Trip total of {breakdown.total:.2f} {currency} exceeds limit of {budget_max:.2f} "
+            f"by {overflow:.2f} {currency}. {len(proposals)} reduction strategies proposed."
         )
     else:
         notes = (
-            f"Trip total of ${breakdown.total:.2f} {currency} is fully within the "
-            f"maximum budget limit of ${budget_max:.2f} (surplus: ${budget_max - breakdown.total:.2f})."
+            f"Trip total of {breakdown.total:.2f} {currency} is fully within the "
+            f"maximum budget limit of {budget_max:.2f} (surplus: {budget_max - breakdown.total:.2f} {currency})."
         )
 
     return BudgetAgentOutput(
